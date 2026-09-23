@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './src/supabase';
+import { registerForPushNotifications, sendPairlePush } from './src/notifications';
 
 type TileState = 'correct' | 'present' | 'absent';
 type ScoredGuess = { word: string; states: TileState[] };
@@ -47,6 +48,13 @@ export default function App() {
     const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
     return () => data.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    registerForPushNotifications().catch((error) => {
+      console.warn('Push registration failed:', error instanceof Error ? error.message : error);
+    });
+  }, [session?.user.id]);
 
   if (booting) return <Centered><ActivityIndicator size="large" /></Centered>;
 
@@ -240,6 +248,7 @@ function SetWord({ dashboard, onDone, onBack }: { dashboard: Dashboard; onDone: 
       const { data, error } = await supabase.rpc('submit_word', { word });
       if (error) throw error;
       onDone(data as Dashboard);
+      sendPairlePush('word_sent').catch(() => undefined);
       Alert.alert('Sent 💌', `${dashboard.partnerName} can now play today's word.`);
     } catch (e) { Alert.alert('Could not send', e instanceof Error ? e.message : 'Try again'); }
     finally { setBusy(false); }
@@ -270,7 +279,13 @@ function Play({ dashboard, onDone, onBack }: { dashboard: Dashboard; onDone: (d:
       setDraft('');
       const next = data as Dashboard;
       onDone(next);
-      if (next.myResult?.finished) Alert.alert(next.myResult.solved ? 'Nice 🎉' : 'Oof 😅', next.myResult.solved ? `Solved in ${next.myResult.guesses.length}/6.` : `The word was ${next.myResult.answer}.`);
+      if (next.myResult?.finished) {
+        sendPairlePush(next.completed ? 'day_completed' : 'puzzle_finished', {
+          solved: next.myResult.solved,
+          guessCount: next.myResult.guesses.length,
+        }).catch(() => undefined);
+        Alert.alert(next.myResult.solved ? 'Nice 🎉' : 'Oof 😅', next.myResult.solved ? `Solved in ${next.myResult.guesses.length}/6.` : `The word was ${next.myResult.answer}.`);
+      }
     } catch (e) { Alert.alert('Could not submit', e instanceof Error ? e.message : 'Try again'); }
     finally { setBusy(false); }
   }

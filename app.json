@@ -7,10 +7,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.example.pairle"
+      "bundleIdentifier": "com.aslanka.pairle"
     },
     "android": {
-      "package": "com.example.pairle"
+      "package": "com.aslanka.pairle"
     }
   }
 }

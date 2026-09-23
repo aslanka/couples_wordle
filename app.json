@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "Pairle",
+    "slug": "pairle",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.example.pairle"
+    },
+    "android": {
+      "package": "com.example.pairle"
+    }
+  }
+}

@@ -5,12 +5,20 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-notifications"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.aslanka.pairle"
     },
     "android": {
       "package": "com.aslanka.pairle"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6afb4e9f-e922-4460-a33f-4026cdc3bb37"
+      }
     }
   }
 }

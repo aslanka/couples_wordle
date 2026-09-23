@@ -96,7 +96,7 @@ as $$
 declare c text;
 begin
   loop
-    c := upper(substr(encode(gen_random_bytes(6), 'hex'), 1, 6));
+    c := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6));
     exit when not exists(select 1 from public.pairs where invite_code = c);
   end loop;
   return c;

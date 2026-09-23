@@ -1,130 +1,110 @@
-# Pairle — two-device MVP
+# Pairle — persistent Supabase MVP
 
-Pairle is a daily couples Wordle where each partner secretly chooses a five-letter word for the other person.
-
-This branch replaces the original pass-the-phone demo with a real two-screen workflow.
+This branch replaces temporary rooms with a permanent two-person pairing.
 
 ## What works
 
-- Create a shared Pairle room on screen 1
-- Join by 6-character code on screen 2
-- Each screen has its own player identity
-- Each partner independently chooses a secret five-letter word
-- Room state refreshes automatically every 1.5 seconds
-- Each player independently solves the word created for them
-- Six-guess Wordle scoring, including duplicate-letter handling
-- Secret answers remain on the local room server while the puzzle is active
-- Each player can see when their partner has set a word / finished
+- Email/password account creation and sign-in
+- One-time partner pairing by invite code
+- Pair membership persists forever unless you later add an unpair flow
+- A fresh daily game is created automatically when either partner opens the app
+- Each partner independently creates a five-letter word
+- Each partner independently solves the word made for them
+- Secret answers stay in Supabase and are scored server-side
+- Six-guess Wordle scoring with duplicate-letter handling
+- Daily completion and shared streak tracking
+- Supabase-backed state works across separate phones, simulators, and browsers
+- App sessions persist with AsyncStorage
 
-## 1. Pull the branch
+## 1. Supabase setup
+
+Create a Supabase project, then open the SQL Editor and run the entire file:
+
+```text
+supabase/schema.sql
+```
+
+For easiest local testing, under Authentication settings you can temporarily disable email confirmation. If email confirmation stays enabled, each test account must confirm its email before signing in.
+
+## 2. Add local environment variables
+
+Copy the example file:
+
+```bash
+cp .env.example .env
+```
+
+Fill in:
+
+```text
+EXPO_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY
+```
+
+Use the public/anon client key, never the service-role key in the React Native app.
+
+## 3. Pull and install
 
 ```bash
 git fetch origin
-git checkout two-device-mvp
+git checkout supabase-persistent-pairing
 git pull
 npm install
-```
-
-## 2. Start the local room server
-
-Open terminal 1 from the project directory:
-
-```bash
-node server.mjs
-```
-
-You should see:
-
-```text
-Pairle local server running on http://0.0.0.0:8787
-```
-
-The server stores rooms in memory, so stopping it clears all rooms. That is intentional for this MVP.
-
-## 3. Start Expo
-
-Open terminal 2:
-
-```bash
 npx expo start
 ```
 
+`npm install` will update `package-lock.json` locally because Supabase dependencies were added on this branch.
+
 ## 4. Test with two screens
 
-### Easiest: two separate runtimes
+Use any two independent app runtimes, for example:
 
-Good combinations are:
-
-- iOS Simulator + web browser
-- iOS Simulator + physical phone
-- Android emulator + iOS Simulator
+- iOS Simulator + browser
+- two browser profiles/private windows
+- iOS Simulator + Android emulator
 - two physical phones
 
-Create a room on one screen, then use the displayed code to join on the other.
+### Screen A
 
-### Server URL
+1. Create account / sign in.
+2. Tap **Create pair**.
+3. Share the displayed 6-character invite code.
 
-Each screen asks for the local server URL.
+### Screen B
 
-For web or iOS Simulator on the same Mac, this normally works:
+1. Create a different account / sign in.
+2. Tap **Join partner**.
+3. Enter the invite code.
 
-```text
-http://localhost:8787
-```
+That code is only needed once. Both accounts now belong to the same permanent pair.
 
-For a physical phone, `localhost` points to the phone itself. Use your Mac's LAN IP instead, for example:
+## Daily flow
 
-```text
-http://192.168.1.25:8787
-```
+Every day the home screen is automatically scoped to today's date.
 
-To find your Mac's Wi-Fi IP you can run:
+1. Each partner sees **Create word** until they send a word.
+2. As soon as one partner submits, the other device sees that today's word is ready (the app polls Supabase every few seconds for the MVP).
+3. Each player solves independently.
+4. When both puzzles finish, the daily game is marked complete and the pair streak updates.
+5. The next calendar day automatically produces a new daily game. No new room or invite code is needed.
 
-```bash
-ipconfig getifaddr en0
-```
+## Notifications
 
-Then enter:
+The database/app flow is ready for the notification phase, but true remote push notifications need Expo push credentials and an EAS project. Expo recommends testing push with a development build rather than relying on Expo Go for all platforms.
 
-```text
-http://YOUR_MAC_IP:8787
-```
+The intended events are:
 
-Make sure both devices are on the same Wi-Fi network.
+- Morning reminder: **Create a word for your partner**
+- Partner submits: **Your partner just sent today's Pairle**
+- Partner finishes: **Your partner solved your word**
+- Evening reminder if one player has not completed the day
 
-For the standard Android emulator, the Mac host is commonly available at:
+Next implementation step: add `expo-notifications`, register each device's Expo push token into `profiles.expo_push_token`, and deploy a Supabase Edge Function that sends the partner notifications through Expo Push Service.
 
-```text
-http://10.0.2.2:8787
-```
+## Security notes
 
-## Test flow
-
-1. Screen A: enter a name and tap **Create Pairle**.
-2. Copy the six-character room code.
-3. Screen B: choose **Join room**, enter a second name and the room code.
-4. Both screens choose a secret five-letter word.
-5. When the other person's word is ready, **Play partner's word** appears automatically.
-6. Both players can solve independently.
-
-## Important MVP limitations
-
-- No production authentication yet.
-- Rooms disappear when `server.mjs` stops.
-- No database or historical daily games yet.
-- No dictionary validation yet; any five letters are accepted.
-- No push notifications yet.
-- A refresh/restart of the app requires joining/creating again because device sessions are intentionally kept in memory for easy two-tab/two-runtime testing.
-
-## Next production step
-
-Once the two-device loop feels right, replace the in-memory server with Supabase:
-
-- Auth
-- Persistent pairs
-- Invite/deep links
-- Daily puzzles
-- Realtime room updates
-- Persistent streak/history
-- Push notifications
-- Row-level security so each secret word is only readable by its creator until the puzzle ends
+- The React Native app only contains the public Supabase anon key.
+- Pairle gameplay is performed through authenticated RPC functions.
+- The secret word is not returned to the solver until their puzzle is finished.
+- Row Level Security is enabled on the underlying tables.
+- Never put a Supabase service-role key in `.env` for the client app.

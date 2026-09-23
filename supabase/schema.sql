@@ -63,9 +63,12 @@ alter table public.daily_games enable row level security;
 alter table public.puzzles enable row level security;
 alter table public.guesses enable row level security;
 
-create policy if not exists "profile self read" on public.profiles
+drop policy if exists "profile self read" on public.profiles;
+create policy "profile self read" on public.profiles
   for select using (auth.uid() = id);
-create policy if not exists "profile self update" on public.profiles
+
+drop policy if exists "profile self update" on public.profiles;
+create policy "profile self update" on public.profiles
   for update using (auth.uid() = id);
 
 create or replace function public.handle_new_user()

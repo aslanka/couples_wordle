@@ -57,7 +57,14 @@ type Screen = MainTab | 'setWord';
 type AuthMode = 'signup' | 'signin';
 type HistorySide = 'mine' | 'theirs';
 
+type KeyStatus = TileState | undefined;
+
 const normalizeWord = (v: string) => v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 5);
+const KEYBOARD_ROWS = [
+  ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+  ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+  ['Z', 'X', 'C', 'V', 'B', 'N', 'M'],
+];
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -243,10 +250,16 @@ function WordleScreen({ dashboard, onDone }: { dashboard: Dashboard; onDone: (d:
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const guesses = dashboard.myResult?.guesses ?? [];
+
   async function submit() {
-    if (draft.length !== 5) return;
+    if (draft.length !== 5 || busy) return;
     try {
       setBusy(true);
+      const validEnglishWord = await isValidEnglishGuess(draft);
+      if (!validEnglishWord) {
+        Alert.alert('Not in the word list', 'Try a valid five-letter English word.');
+        return;
+      }
       const { data, error } = await supabase.rpc('submit_guess', { attempt: draft });
       if (error) throw error;
       setDraft('');
@@ -256,10 +269,38 @@ function WordleScreen({ dashboard, onDone }: { dashboard: Dashboard; onDone: (d:
         sendPairlePush(next.completed ? 'day_completed' : 'puzzle_finished', { solved: next.myResult.solved, guessCount: next.myResult.guesses.length }).catch(() => undefined);
         Alert.alert(next.myResult.solved ? 'Nice ♡' : 'That one was sneaky', next.myResult.solved ? `Solved in ${next.myResult.guesses.length}/6.` : `The word was ${next.myResult.answer}.`);
       }
-    } catch (e) { Alert.alert('Could not submit', e instanceof Error ? e.message : 'Try again'); }
-    finally { setBusy(false); }
+    } catch (e) {
+      Alert.alert('Could not submit', e instanceof Error ? e.message : 'Try again');
+    } finally {
+      setBusy(false);
+    }
   }
-  return <ScrollView contentContainerStyle={styles.pageWithNav} keyboardShouldPersistTaps="handled"><View style={styles.simpleHeader}><Text style={styles.sectionTitle}>Wordle</Text><Text style={styles.muted}>From {dashboard.partnerName}</Text></View><CountdownBar />{!dashboard.partnerWordReady ? <View style={styles.waitingCard}><Text style={styles.eyebrow}>NOT READY YET</Text><Text style={styles.cardHero}>Waiting on {dashboard.partnerName}.</Text><Text style={styles.subCompact}>We’ll keep this spot ready. You’ll get a notification when their word lands.</Text></View> : <><View style={styles.wordleTopCard}><Text style={styles.eyebrow}>TODAY'S WORD</Text><Text style={styles.wordleStatus}>{dashboard.myResult?.finished ? resultText(dashboard.myResult) : `${guesses.length}/6 guesses used`}</Text>{dashboard.myResult?.finished && <Text style={styles.wordleSub}>This board stays here until midnight.</Text>}</View><Board guesses={guesses} draft={!dashboard.myResult?.finished ? draft : ''} />{!dashboard.myResult?.finished ? <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}><TextInput value={draft} onChangeText={(v) => setDraft(normalizeWord(v))} maxLength={5} autoCapitalize="characters" autoCorrect={false} style={styles.guessInput} placeholder="TYPE YOUR GUESS" placeholderTextColor="#A69599" /><PrimaryButton title={busy ? 'Checking…' : 'Submit guess'} onPress={submit} disabled={busy || draft.length !== 5} /></KeyboardAvoidingView> : <View style={styles.finishedNote}><Text style={styles.finishedNoteText}>{dashboard.myResult.solved ? `Solved in ${guesses.length}. Nicely done.` : `Answer: ${dashboard.myResult.answer}`}</Text></View>}</>}</ScrollView>;
+
+  return (
+    <ScrollView contentContainerStyle={styles.pageWithNav} keyboardShouldPersistTaps="handled">
+      <View style={styles.simpleHeader}><Text style={styles.sectionTitle}>Wordle</Text><Text style={styles.muted}>From {dashboard.partnerName}</Text></View>
+      <CountdownBar />
+      {!dashboard.partnerWordReady ? (
+        <View style={styles.waitingCard}><Text style={styles.eyebrow}>NOT READY YET</Text><Text style={styles.cardHero}>Waiting on {dashboard.partnerName}.</Text><Text style={styles.subCompact}>We’ll keep this spot ready. You’ll get a notification when their word lands.</Text></View>
+      ) : (
+        <>
+          <View style={styles.wordleTopCard}><Text style={styles.eyebrow}>TODAY'S WORD</Text><Text style={styles.wordleStatus}>{dashboard.myResult?.finished ? resultText(dashboard.myResult) : `${guesses.length}/6 guesses used`}</Text>{dashboard.myResult?.finished && <Text style={styles.wordleSub}>This board stays here until midnight.</Text>}</View>
+          <Board guesses={guesses} draft={!dashboard.myResult?.finished ? draft : ''} />
+          {!dashboard.myResult?.finished ? (
+            <PairleKeyboard
+              guesses={guesses}
+              draft={draft}
+              onChange={setDraft}
+              onSubmit={submit}
+              busy={busy}
+            />
+          ) : (
+            <View style={styles.finishedNote}><Text style={styles.finishedNoteText}>{dashboard.myResult.solved ? `Solved in ${guesses.length}. Nicely done.` : `Answer: ${dashboard.myResult.answer}`}</Text></View>
+          )}
+        </>
+      )}
+    </ScrollView>
+  );
 }
 
 function HistoryScreen({ rounds, dashboard, stats }: { rounds: HistoryRound[]; dashboard: Dashboard; stats: PairStats | null }) {
@@ -300,6 +341,53 @@ function SetWord({ dashboard, onDone, onBack }: { dashboard: Dashboard; onDone: 
   return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><Back onPress={onBack} /><CountdownBar /><Text style={styles.eyebrow}>SECRET WORD</Text><Text style={styles.hero}>Pick a word for {dashboard.partnerName}.</Text><Text style={styles.sub}>Five letters. A tiny challenge from you to them.</Text><WordTiles word={word} /><TextInput value={word} onChangeText={(v) => setWord(normalizeWord(v))} autoFocus maxLength={5} autoCapitalize="characters" autoCorrect={false} style={styles.hiddenInput} /><PrimaryButton title={busy ? 'Sending…' : 'Send today’s word'} onPress={save} disabled={busy || word.length !== 5} /></KeyboardAvoidingView>;
 }
 
+function PairleKeyboard({ guesses, draft, onChange, onSubmit, busy }: { guesses: ScoredGuess[]; draft: string; onChange: (value: string) => void; onSubmit: () => void; busy: boolean }) {
+  const status = keyboardStatuses(guesses);
+  const pressLetter = (letter: string) => {
+    if (busy || draft.length >= 5) return;
+    onChange(`${draft}${letter}`);
+  };
+  const backspace = () => {
+    if (busy || !draft.length) return;
+    onChange(draft.slice(0, -1));
+  };
+
+  return (
+    <View style={styles.keyboardWrap}>
+      {KEYBOARD_ROWS.slice(0, 2).map((row) => (
+        <View key={row.join('')} style={styles.keyboardRow}>
+          {row.map((letter) => <KeyboardKey key={letter} label={letter} state={status[letter]} onPress={() => pressLetter(letter)} disabled={busy} />)}
+        </View>
+      ))}
+      <View style={styles.keyboardRow}>
+        <KeyboardKey label="ENTER" wide onPress={onSubmit} disabled={busy || draft.length !== 5} />
+        {KEYBOARD_ROWS[2].map((letter) => <KeyboardKey key={letter} label={letter} state={status[letter]} onPress={() => pressLetter(letter)} disabled={busy} />)}
+        <KeyboardKey label="⌫" wide onPress={backspace} disabled={busy || !draft.length} />
+      </View>
+      {busy && <Text style={styles.keyboardHint}>Checking word…</Text>}
+    </View>
+  );
+}
+
+function KeyboardKey({ label, state, onPress, wide = false, disabled = false }: { label: string; state?: KeyStatus; onPress: () => void; wide?: boolean; disabled?: boolean }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[
+        styles.keyboardKey,
+        wide && styles.keyboardKeyWide,
+        state === 'correct' && styles.keyboardKeyCorrect,
+        state === 'present' && styles.keyboardKeyPresent,
+        state === 'absent' && styles.keyboardKeyAbsent,
+        disabled && styles.keyboardKeyDisabled,
+      ]}
+    >
+      <Text style={[styles.keyboardKeyText, state && styles.keyboardKeyTextUsed, wide && styles.keyboardKeyTextWide]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function CountdownBar() {
   const now = useClock();
   const diff = Math.max(0, nextMidnight(now).getTime() - now.getTime());
@@ -336,6 +424,35 @@ function nextMidnight(now: Date) { const next = new Date(now); next.setHours(24,
 function historyDate(round?: HistoryRound) { if (!round) return new Date(); const [y, m, d] = round.displayAt.split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1, 12); }
 function formatRoundDate(round?: HistoryRound) { return historyDate(round).toLocaleDateString(undefined, { weekday: 'short', month: 'long', day: 'numeric' }); }
 
+async function isValidEnglishGuess(word: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word.toLowerCase()}`, { signal: controller.signal });
+    if (response.status === 404) return false;
+    if (!response.ok) throw new Error('Word check is unavailable right now. Try again.');
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw new Error('Word check timed out. Try again.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function keyboardStatuses(guesses: ScoredGuess[]) {
+  const statuses: Record<string, KeyStatus> = {};
+  const rank: Record<TileState, number> = { absent: 1, present: 2, correct: 3 };
+  guesses.forEach((guess) => {
+    guess.word.split('').forEach((letter, index) => {
+      const next = guess.states[index];
+      const current = statuses[letter];
+      if (!current || rank[next] > rank[current]) statuses[letter] = next;
+    });
+  });
+  return statuses;
+}
+
 const C = { bg: '#FFF9F7', paper: '#FFFFFF', berry: '#A85F72', lavenderSoft: '#F3EEFB', text: '#2E2A2B', muted: '#8C7F82', border: '#EFD8DC', roseSoft: '#FDE8EA', sage: '#8FB996', grayTile: '#D9D2D3' };
 const styles = StyleSheet.create({
   safe:{flex:1,backgroundColor:C.bg},appShell:{flex:1,backgroundColor:C.bg},screenArea:{flex:1},center:{flex:1,alignItems:'center',justifyContent:'center',backgroundColor:C.bg},page:{flexGrow:1,padding:22,backgroundColor:C.bg},pageWithNav:{flexGrow:1,paddingHorizontal:22,paddingTop:18,paddingBottom:120,backgroundColor:C.bg},centerContent:{justifyContent:'center'},
@@ -346,6 +463,7 @@ const styles = StyleSheet.create({
   countdownBar:{marginTop:18,marginBottom:6,backgroundColor:'#FFFDFD',borderWidth:1,borderColor:C.border,borderRadius:18,paddingHorizontal:15,paddingVertical:12,flexDirection:'row',alignItems:'center'},currentTime:{fontSize:18,fontWeight:'900',color:C.text,minWidth:72},countdownDivider:{height:28,width:1,backgroundColor:C.border,marginHorizontal:13},countdownLabel:{fontSize:9,letterSpacing:1.2,color:C.muted,fontWeight:'900'},countdownValue:{marginTop:2,fontSize:14,color:C.berry,fontWeight:'900'},heroCard:{marginTop:18,borderRadius:30,padding:24,backgroundColor:C.roseSoft,borderWidth:1.5,borderColor:'#F2C8CE'},cardHero:{fontSize:29,lineHeight:34,fontWeight:'900',color:C.text,marginTop:10,letterSpacing:-1},progressWrap:{marginTop:27,flexDirection:'row',justifyContent:'space-between',position:'relative'},progressRail:{position:'absolute',left:18,right:18,top:8,height:3,borderRadius:2,backgroundColor:'#EECED3'},progressStep:{width:'31%',alignItems:'center'},progressDot:{width:17,height:17,borderRadius:9,backgroundColor:'#E7C4CA',marginBottom:8},progressDotActive:{backgroundColor:C.berry},progressLabel:{fontSize:11,fontWeight:'800',color:'#8B7479',textAlign:'center'},
   statsCard:{backgroundColor:C.paper,borderRadius:27,padding:20,marginTop:14,borderWidth:1.5,borderColor:C.border},statsHeaderRow:{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start'},statsTitle:{fontSize:22,fontWeight:'900',color:C.text,marginTop:5},statsMini:{fontSize:12,color:C.muted,fontWeight:'800',backgroundColor:'#FAF0F2',paddingHorizontal:10,paddingVertical:6,borderRadius:999},statCompareRow:{flexDirection:'row',alignItems:'center',marginTop:22},statPerson:{flex:1,alignItems:'center'},statName:{fontSize:14,fontWeight:'900',color:C.text,maxWidth:110},statAverage:{fontSize:31,fontWeight:'900',color:C.berry,marginTop:3},statCaption:{fontSize:11,color:C.muted,fontWeight:'700'},statWins:{marginTop:7,fontSize:11,color:'#7D686D',fontWeight:'800'},vsPill:{width:38,height:38,borderRadius:19,backgroundColor:C.lavenderSoft,alignItems:'center',justifyContent:'center'},vsText:{color:'#8977A3',fontWeight:'900',fontSize:12},statsFoot:{textAlign:'center',marginTop:18,color:C.muted,fontSize:11,fontWeight:'700'},actionCard:{backgroundColor:'#FFF6F3',borderRadius:26,padding:21,marginTop:14,borderWidth:1.5,borderColor:'#F2D6D1'},lavenderCard:{backgroundColor:C.lavenderSoft,borderColor:'#DED2F2'},actionStatus:{fontSize:24,fontWeight:'900',color:C.text,marginTop:8},actionDetail:{fontSize:15,lineHeight:21,color:C.muted,marginTop:7},inviteCode:{fontSize:44,fontWeight:'900',letterSpacing:8,textAlign:'center',marginVertical:24,color:C.berry},refreshLink:{paddingVertical:24,alignItems:'center'},refreshText:{color:C.berry,fontWeight:'900',fontSize:15},
   waitingCard:{marginTop:18,borderRadius:28,padding:24,backgroundColor:C.lavenderSoft,borderWidth:1.5,borderColor:'#DDD0F0'},wordleTopCard:{marginTop:18,borderRadius:22,padding:18,backgroundColor:C.roseSoft,borderWidth:1,borderColor:'#F0D0D5'},wordleStatus:{fontSize:24,fontWeight:'900',color:C.text,marginTop:5},wordleSub:{marginTop:6,fontSize:13,lineHeight:18,color:C.muted},board:{gap:8,marginVertical:22},row:{flexDirection:'row',justifyContent:'center',gap:8},tile:{width:54,height:54,borderWidth:2,borderColor:C.grayTile,borderRadius:10,backgroundColor:C.paper,alignItems:'center',justifyContent:'center'},tileText:{fontSize:23,fontWeight:'900',color:C.text},correct:{backgroundColor:C.sage,borderColor:C.sage},present:{backgroundColor:'#D8B86A',borderColor:'#D8B86A'},absent:{backgroundColor:'#8D8587',borderColor:'#8D8587'},guessInput:{minHeight:56,borderRadius:17,backgroundColor:C.paper,borderWidth:1.5,borderColor:C.border,paddingHorizontal:16,textAlign:'center',fontSize:18,fontWeight:'900',letterSpacing:2,color:C.text},finishedNote:{backgroundColor:C.paper,borderRadius:18,padding:15,borderWidth:1,borderColor:C.border},finishedNoteText:{textAlign:'center',color:C.berry,fontWeight:'900'},
+  keyboardWrap:{marginTop:2,marginBottom:14,gap:7},keyboardRow:{flexDirection:'row',justifyContent:'center',gap:5},keyboardKey:{flex:1,height:48,borderRadius:8,backgroundColor:'#EFE7E8',alignItems:'center',justifyContent:'center',minWidth:0},keyboardKeyWide:{flex:1.45},keyboardKeyCorrect:{backgroundColor:C.sage},keyboardKeyPresent:{backgroundColor:'#D8B86A'},keyboardKeyAbsent:{backgroundColor:'#8D8587'},keyboardKeyDisabled:{opacity:.55},keyboardKeyText:{fontSize:14,fontWeight:'900',color:C.text},keyboardKeyTextUsed:{color:'#fff'},keyboardKeyTextWide:{fontSize:10},keyboardHint:{textAlign:'center',fontSize:11,fontWeight:'800',color:C.muted,marginTop:2},
   historyDateRow:{marginTop:18,backgroundColor:C.paper,borderWidth:1.5,borderColor:C.border,borderRadius:24,padding:10,flexDirection:'row',alignItems:'center'},historyArrow:{width:48,height:48,borderRadius:18,alignItems:'center',justifyContent:'center',backgroundColor:C.roseSoft},historyArrowDisabled:{opacity:.28},historyArrowText:{fontSize:32,lineHeight:34,color:C.berry,fontWeight:'700'},historyDateCenter:{flex:1,alignItems:'center',paddingHorizontal:6},historyDate:{fontSize:17,color:C.text,fontWeight:'900'},historyTime:{marginTop:3,fontSize:11,color:C.muted,fontWeight:'700'},historyPicker:{marginTop:10,backgroundColor:C.paper,borderWidth:1.5,borderColor:C.border,borderRadius:24,padding:14},historyPickerRow:{minHeight:56,borderRadius:16,paddingHorizontal:13,flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:8},historyPickerRowActive:{backgroundColor:C.roseSoft},historyPickerDate:{fontSize:14,color:C.text,fontWeight:'900'},historyPickerTime:{marginTop:2,fontSize:11,color:C.muted},historyPickerStatus:{color:C.berry,fontWeight:'900',fontSize:11},historySegment:{marginTop:14,flexDirection:'row',backgroundColor:'#F5E9EB',padding:4,borderRadius:18},historySegmentButton:{flex:1,minHeight:44,alignItems:'center',justifyContent:'center',borderRadius:14,paddingHorizontal:8},historySegmentActive:{backgroundColor:C.paper},historySegmentText:{color:C.muted,fontWeight:'800',fontSize:12},historySegmentTextActive:{color:C.berry},
   profileCard:{marginTop:18,alignItems:'center',backgroundColor:C.paper,borderRadius:28,padding:24,borderWidth:1.5,borderColor:C.border},avatarCircle:{width:72,height:72,borderRadius:36,backgroundColor:C.roseSoft,alignItems:'center',justifyContent:'center'},avatarText:{color:C.berry,fontWeight:'900',fontSize:24},profileName:{fontSize:25,fontWeight:'900',color:C.text,marginTop:12},profileMeta:{fontSize:13,color:C.muted,marginTop:3},pairedCard:{marginTop:14,backgroundColor:C.lavenderSoft,borderRadius:26,padding:21,borderWidth:1.5,borderColor:'#DED2F2'},partnerLine:{flexDirection:'row',alignItems:'center',marginTop:6},partnerName:{fontSize:26,fontWeight:'900',color:C.text},softHeart:{fontSize:25,color:C.berry,marginLeft:8},pairedSub:{marginTop:6,color:C.muted,fontSize:14},accountStatsRow:{flexDirection:'row',gap:9,marginTop:14},miniStat:{flex:1,backgroundColor:C.paper,borderRadius:20,paddingVertical:16,paddingHorizontal:8,alignItems:'center',borderWidth:1,borderColor:C.border},miniStatValue:{fontSize:22,fontWeight:'900',color:C.berry},miniStatLabel:{marginTop:4,fontSize:10,color:C.muted,fontWeight:'800',textAlign:'center'},wordEntry:{flexDirection:'row',justifyContent:'space-between',marginVertical:28},bigTile:{width:'18%',aspectRatio:.85,borderRadius:13,borderWidth:2,borderColor:C.border,backgroundColor:C.paper,alignItems:'center',justifyContent:'center'},bigTileFilled:{borderColor:C.berry,backgroundColor:'#FFF4F6'},bigTileText:{fontSize:28,fontWeight:'900',color:C.text},hiddenInput:{opacity:.02,height:5},bottomNavWrap:{position:'absolute',left:18,right:18,bottom:Platform.OS === 'ios' ? 12 : 10},bottomNav:{height:72,backgroundColor:'#FFFDFD',borderRadius:24,borderWidth:1.5,borderColor:C.border,flexDirection:'row',alignItems:'center',justifyContent:'space-around',paddingHorizontal:7,shadowColor:'#6D4D55',shadowOpacity:.08,shadowRadius:12,shadowOffset:{width:0,height:5},elevation:5},navItem:{flex:1,alignItems:'center',justifyContent:'center'},navIconBubble:{width:31,height:31,borderRadius:16,alignItems:'center',justifyContent:'center'},navIconBubbleActive:{backgroundColor:C.roseSoft},navGlyph:{fontSize:18,fontWeight:'900',color:'#A69599'},navGlyphActive:{color:C.berry},navLabel:{fontSize:9,fontWeight:'800',color:'#A69599',marginTop:2},navLabelActive:{color:C.berry}
 });

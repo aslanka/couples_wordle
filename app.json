@@ -5,6 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/pairle-icon.png",
     "plugins": [
       "expo-notifications"
     ],
@@ -17,23 +18,22 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.aslanka.pairle",
+      "icon": "./assets/pairle-icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.aslanka.pairle"
+      "package": "com.aslanka.pairle",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/pairle-icon.png",
+        "backgroundColor": "#FFF9F7"
+      }
     },
     "extra": {
       "eas": {
         "projectId": "6afb4e9f-e922-4460-a33f-4026cdc3bb37"
       }
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/6afb4e9f-e922-4460-a33f-4026cdc3bb37"
     }
   }
 }

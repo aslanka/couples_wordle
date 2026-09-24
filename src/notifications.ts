@@ -47,12 +47,15 @@ export async function registerForPushNotifications() {
 }
 
 export async function sendPairlePush(
-  event: 'word_sent' | 'puzzle_finished' | 'day_completed',
+  event: 'word_sent' | 'puzzle_finished' | 'day_completed' | 'hint_requested',
   details: { solved?: boolean; guessCount?: number } = {},
 ) {
   const { error } = await supabase.functions.invoke('send-pairle-push', {
     body: { event, ...details },
   });
 
-  if (error) console.warn('Could not send Pairle push:', error.message);
+  if (error) {
+    console.warn('Could not send Pairle push:', error.message);
+    throw error;
+  }
 }

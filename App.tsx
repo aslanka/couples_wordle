@@ -387,9 +387,6 @@ function PairleKeyboard({ guesses, draft, onChange, onSubmit, busy }: { guesses:
           <KeyboardKey label="⌫" wide onPress={backspace} disabled={busy || !draft.length} />
         </View>
       </View>
-      <View style={styles.keyboardFooter}>
-        {busy ? <><ActivityIndicator size="small" color={C.berry} /><Text style={styles.keyboardHint}>Checking word…</Text></> : <Text style={styles.keyboardHelper}>Green = right spot · Gold = in the word</Text>}
-      </View>
     </View>
   );
 }

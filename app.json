@@ -8,6 +8,12 @@
     "plugins": [
       "expo-notifications"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/6afb4e9f-e922-4460-a33f-4026cdc3bb37"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.aslanka.pairle"

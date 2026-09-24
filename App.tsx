@@ -19,7 +19,7 @@ import { registerForPushNotifications, sendPairlePush } from './src/notification
 
 type TileState = 'correct' | 'present' | 'absent';
 type ScoredGuess = { word: string; states: TileState[] };
-type BoardSnapshot = { guesses: ScoredGuess[]; solved: boolean; finished: boolean; answer: string | null } | null;
+type BoardSnapshot = { guesses: ScoredGuess[]; solved: boolean; finished: boolean; answer: string | null; hint?: string | null } | null;
 type Dashboard = {
   paired: boolean;
   pairId?: string;
@@ -301,7 +301,8 @@ function WordleScreen({ dashboard, onDone }: { dashboard: Dashboard; onDone: (d:
         <>
           <View style={styles.wordleTopCard}><Text style={styles.eyebrow}>TODAY'S WORD</Text><Text style={styles.wordleStatus}>{dashboard.myResult?.finished ? resultText(dashboard.myResult) : `${guesses.length}/6 guesses used`}</Text>{dashboard.myResult?.finished && <Text style={styles.wordleSub}>This board stays here until midnight.</Text>}</View>
           <Board guesses={guesses} draft={!dashboard.myResult?.finished ? draft : ''} />
-          {!dashboard.myResult?.finished && <SecondaryButton title={hintRequested ? 'Hint requested ✓' : hintBusy ? 'Sending hint request…' : 'Ask for a hint'} onPress={requestHint} />}
+          {dashboard.myResult?.hint && <View style={[styles.actionCard, styles.lavenderCard]}><Text style={styles.eyebrow}>HINT FROM {dashboard.partnerName?.toUpperCase()}</Text><Text style={styles.actionDetail}>{dashboard.myResult.hint}</Text></View>}
+          {!dashboard.myResult?.finished && !dashboard.myResult?.hint && <SecondaryButton title={hintRequested ? 'Hint requested ✓' : hintBusy ? 'Sending hint request…' : 'Ask for a hint'} onPress={requestHint} />}
           {!dashboard.myResult?.finished ? (
             <PairleKeyboard
               guesses={guesses}

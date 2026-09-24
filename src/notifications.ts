@@ -94,6 +94,8 @@ async function handleNotificationResponse(response: Notifications.NotificationRe
           const hint = (value ?? '').trim();
           if (!hint) return;
           try {
+            const { error: saveError } = await supabase.rpc('save_pairle_hint', { hint_value: hint.slice(0, 120) });
+            if (saveError) throw saveError;
             await sendPairlePush('hint_sent', { hint: hint.slice(0, 120) });
             Alert.alert('Hint sent ♡');
           } catch (error) {

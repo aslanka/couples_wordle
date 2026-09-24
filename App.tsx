@@ -59,7 +59,6 @@ type HistorySide = 'mine' | 'theirs';
 type KeyStatus = TileState | undefined;
 
 const normalizeWord = (v: string) => v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 5);
-const displayTileLetter = (letter?: string) => letter === 'I' ? 'I\u200A' : (letter ?? '');
 const KEYBOARD_ROWS = [
   ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
   ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
@@ -249,6 +248,8 @@ function Home({ dashboard, stats, onSetWord, onRefresh }: { dashboard: Dashboard
 function WordleScreen({ dashboard, onDone }: { dashboard: Dashboard; onDone: (d: Dashboard) => void }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [hintBusy, setHintBusy] = useState(false);
+  const [hintRequested, setHintRequested] = useState(false);
   const guesses = dashboard.myResult?.guesses ?? [];
 
   async function submit() {
@@ -276,6 +277,20 @@ function WordleScreen({ dashboard, onDone }: { dashboard: Dashboard; onDone: (d:
     }
   }
 
+  async function requestHint() {
+    if (hintBusy || hintRequested || dashboard.myResult?.finished) return;
+    try {
+      setHintBusy(true);
+      await sendPairlePush('hint_requested');
+      setHintRequested(true);
+      Alert.alert('Hint requested ♡', `${dashboard.partnerName} got a notification to send you a hint.`);
+    } catch (e) {
+      Alert.alert('Could not request a hint', e instanceof Error ? e.message : 'Try again');
+    } finally {
+      setHintBusy(false);
+    }
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.pageWithNav} keyboardShouldPersistTaps="always">
       <View style={styles.simpleHeader}><Text style={styles.sectionTitle}>Wordle</Text><Text style={styles.muted}>From {dashboard.partnerName}</Text></View>
@@ -286,8 +301,15 @@ function WordleScreen({ dashboard, onDone }: { dashboard: Dashboard; onDone: (d:
         <>
           <View style={styles.wordleTopCard}><Text style={styles.eyebrow}>TODAY'S WORD</Text><Text style={styles.wordleStatus}>{dashboard.myResult?.finished ? resultText(dashboard.myResult) : `${guesses.length}/6 guesses used`}</Text>{dashboard.myResult?.finished && <Text style={styles.wordleSub}>This board stays here until midnight.</Text>}</View>
           <Board guesses={guesses} draft={!dashboard.myResult?.finished ? draft : ''} />
+          {!dashboard.myResult?.finished && <SecondaryButton title={hintRequested ? 'Hint requested ✓' : hintBusy ? 'Sending hint request…' : 'Ask for a hint'} onPress={requestHint} />}
           {!dashboard.myResult?.finished ? (
-            <PairleKeyboard guesses={guesses} draft={draft} onChange={setDraft} onSubmit={submit} busy={busy} />
+            <PairleKeyboard
+              guesses={guesses}
+              draft={draft}
+              onChange={setDraft}
+              onSubmit={submit}
+              busy={busy}
+            />
           ) : (
             <View style={styles.finishedNote}><Text style={styles.finishedNoteText}>{dashboard.myResult.solved ? `Solved in ${guesses.length}. Nicely done.` : `Answer: ${dashboard.myResult.answer}`}</Text></View>
           )}
@@ -345,21 +367,55 @@ function PairleKeyboard({ guesses, draft, onChange, onSubmit, busy }: { guesses:
     if (busy) return;
     onChange((current) => current.slice(0, -1));
   };
+
   return (
     <View style={styles.keyboardWrap}>
-      <View style={styles.keyboardHeader}><Text style={styles.keyboardTitle}>YOUR GUESS</Text><Text style={styles.keyboardProgress}>{draft.length}/5</Text></View>
-      <View style={styles.keyboardRowsWrap}>
-        <View style={styles.keyboardRow}>{KEYBOARD_ROWS[0].map((letter) => <KeyboardKey key={letter} label={letter} state={status[letter]} onPress={() => pressLetter(letter)} disabled={busy} />)}</View>
-        <View style={[styles.keyboardRow, styles.keyboardRowInset]}>{KEYBOARD_ROWS[1].map((letter) => <KeyboardKey key={letter} label={letter} state={status[letter]} onPress={() => pressLetter(letter)} disabled={busy} />)}</View>
-        <View style={styles.keyboardRow}><KeyboardKey label="ENTER" wide onPress={onSubmit} disabled={busy || draft.length !== 5} />{KEYBOARD_ROWS[2].map((letter) => <KeyboardKey key={letter} label={letter} state={status[letter]} onPress={() => pressLetter(letter)} disabled={busy} />)}<KeyboardKey label="⌫" wide onPress={backspace} disabled={busy || !draft.length} /></View>
+      <View style={styles.keyboardHeader}>
+        <Text style={styles.keyboardTitle}>YOUR GUESS</Text>
+        <Text style={styles.keyboardProgress}>{draft.length}/5</Text>
       </View>
-      <View style={styles.keyboardFooter}>{busy ? <><ActivityIndicator size="small" color={C.berry} /><Text style={styles.keyboardHint}>Checking word…</Text></> : <Text style={styles.keyboardHelper}>Green = right spot · Gold = in the word</Text>}</View>
+      <View style={styles.keyboardRowsWrap}>
+        <View style={styles.keyboardRow}>
+          {KEYBOARD_ROWS[0].map((letter) => <KeyboardKey key={letter} label={letter} state={status[letter]} onPress={() => pressLetter(letter)} disabled={busy} />)}
+        </View>
+        <View style={[styles.keyboardRow, styles.keyboardRowInset]}>
+          {KEYBOARD_ROWS[1].map((letter) => <KeyboardKey key={letter} label={letter} state={status[letter]} onPress={() => pressLetter(letter)} disabled={busy} />)}
+        </View>
+        <View style={styles.keyboardRow}>
+          <KeyboardKey label="ENTER" wide onPress={onSubmit} disabled={busy || draft.length !== 5} />
+          {KEYBOARD_ROWS[2].map((letter) => <KeyboardKey key={letter} label={letter} state={status[letter]} onPress={() => pressLetter(letter)} disabled={busy} />)}
+          <KeyboardKey label="⌫" wide onPress={backspace} disabled={busy || !draft.length} />
+        </View>
+      </View>
+      <View style={styles.keyboardFooter}>
+        {busy ? <><ActivityIndicator size="small" color={C.berry} /><Text style={styles.keyboardHint}>Checking word…</Text></> : <Text style={styles.keyboardHelper}>Green = right spot · Gold = in the word</Text>}
+      </View>
     </View>
   );
 }
 
 function KeyboardKey({ label, state, onPress, wide = false, disabled = false }: { label: string; state?: KeyStatus; onPress: () => void; wide?: boolean; disabled?: boolean }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label === '⌫' ? 'Backspace' : label} onPressIn={onPress} disabled={disabled} hitSlop={{ top: 2, bottom: 2, left: 1, right: 1 }} pressRetentionOffset={{ top: 10, bottom: 10, left: 6, right: 6 }} style={({ pressed }) => [styles.keyboardKey, wide && styles.keyboardKeyWide, state === 'correct' && styles.keyboardKeyCorrect, state === 'present' && styles.keyboardKeyPresent, state === 'absent' && styles.keyboardKeyAbsent, pressed && !disabled && styles.keyboardKeyPressed, disabled && styles.keyboardKeyDisabled]}><Text pointerEvents="none" style={[styles.keyboardKeyText, state && styles.keyboardKeyTextUsed, wide && styles.keyboardKeyTextWide]}>{label}</Text></Pressable>;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label === '⌫' ? 'Backspace' : label}
+      onPressIn={onPress}
+      disabled={disabled}
+      hitSlop={{ top: 2, bottom: 2, left: 1, right: 1 }}
+      pressRetentionOffset={{ top: 10, bottom: 10, left: 6, right: 6 }}
+      style={({ pressed }) => [
+        styles.keyboardKey,
+        wide && styles.keyboardKeyWide,
+        state === 'correct' && styles.keyboardKeyCorrect,
+        state === 'present' && styles.keyboardKeyPresent,
+        state === 'absent' && styles.keyboardKeyAbsent,
+        pressed && !disabled && styles.keyboardKeyPressed,
+        disabled && styles.keyboardKeyDisabled,
+      ]}
+    >
+      <Text pointerEvents="none" style={[styles.keyboardKeyText, state && styles.keyboardKeyTextUsed, wide && styles.keyboardKeyTextWide]}>{label}</Text>
+    </Pressable>
+  );
 }
 
 function CountdownBar() {
@@ -378,6 +434,7 @@ function ProgressLine({ dashboard }: { dashboard: Dashboard }) { return <View st
 function ProgressStep({ label, active }: { label: string; active: boolean }) { return <View style={styles.progressStep}><View style={[styles.progressDot, active && styles.progressDotActive]} /><Text style={styles.progressLabel}>{label}</Text></View>; }
 function StatPerson({ name, average, wins }: { name: string; average?: number | null; wins: number }) { return <View style={styles.statPerson}><Text numberOfLines={1} style={styles.statName}>{name}</Text><Text style={styles.statAverage}>{formatAverage(average)}</Text><Text style={styles.statCaption}>avg guesses</Text><Text style={styles.statWins}>{wins} faster days</Text></View>; }
 function MiniStat({ label, value }: { label: string; value: string }) { return <View style={styles.miniStat}><Text style={styles.miniStatValue}>{value}</Text><Text style={styles.miniStatLabel}>{label}</Text></View>; }
+function displayTileLetter(letter?: string) { return letter === 'I' ? 'I\u200A' : (letter ?? ''); }
 function GuessRow({ guess, draft }: { guess?: ScoredGuess; draft: string }) { const word = guess?.word ?? draft; return <View style={styles.row}>{Array.from({ length: 5 }).map((_, i) => <View key={i} style={[styles.tile, !guess && !!word[i] && styles.tileDraftFilled, guess?.states[i] === 'correct' && styles.correct, guess?.states[i] === 'present' && styles.present, guess?.states[i] === 'absent' && styles.absent]}><Text style={[styles.tileText, guess && { color: '#fff' }]}>{displayTileLetter(word[i])}</Text></View>)}</View>; }
 function WordTiles({ word }: { word: string }) { return <View style={styles.wordEntry}>{Array.from({ length: 5 }).map((_, i) => <View key={i} style={[styles.bigTile, word[i] && styles.bigTileFilled]}><Text style={styles.bigTileText}>{word[i] ?? ''}</Text></View>)}</View>; }
 function ActionCard({ title, status, detail, button, onPress }: { title: string; status: string; detail?: string; button?: string; onPress: () => void }) { return <View style={styles.actionCard}><Text style={styles.eyebrow}>{title.toUpperCase()}</Text><Text style={styles.actionStatus}>{status}</Text>{detail && <Text style={styles.actionDetail}>{detail}</Text>}{button && <PrimaryButton title={button} onPress={onPress} />}</View>; }
